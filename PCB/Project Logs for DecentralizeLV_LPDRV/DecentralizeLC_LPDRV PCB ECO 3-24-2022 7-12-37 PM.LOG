@@ -1,0 +1,23 @@
+Removed Pin From Net: NetName=NetF5_2 Pin=S3-1
+Removed Pin From Net: NetName=NetF5_2 Pin=S3-2
+Removed Pin From Net: NetName=NetF5_2 Pin=S4-1
+Removed Pin From Net: NetName=NetF5_2 Pin=S4-2
+Added Component: Designator=F6(MiniBladeFuseHolder)
+Added Component: Designator=F7(MiniBladeFuseHolder)
+Added Pin To Net: NetName=12V0_UF Pin=F6-1
+Added Pin To Net: NetName=12V0_UF Pin=F6-1
+Added Pin To Net: NetName=12V0_UF Pin=F7-1
+Added Pin To Net: NetName=12V0_UF Pin=F7-1
+Added Pin To Net: NetName=NetF6_2 Pin=F6-2
+Added Pin To Net: NetName=NetF6_2 Pin=F6-2
+Added Pin To Net: NetName=NetF6_2 Pin=S3-1
+Added Pin To Net: NetName=NetF6_2 Pin=S3-2
+Added Net: Name=NetF6_2
+Added Pin To Net: NetName=NetF7_2 Pin=F7-2
+Added Pin To Net: NetName=NetF7_2 Pin=F7-2
+Added Pin To Net: NetName=NetF7_2 Pin=S4-1
+Added Pin To Net: NetName=NetF7_2 Pin=S4-2
+Added Net: Name=NetF7_2
+Added Member To Class: ClassName=DecentralizeLV_LPDRV Member=Component F6 MiniAutomotiveFuseHolder
+Added Member To Class: ClassName=DecentralizeLV_LPDRV Member=Component F7 MiniAutomotiveFuseHolder
+Added Room: Name=DecentralizeLV_LPDRV
