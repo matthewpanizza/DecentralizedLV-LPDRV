@@ -27,3 +27,7 @@ A repository for the SolarPack Decentralized Low Voltage Low-Power Driver CAN Bo
 ## PCB Design
 
 ![IMG_2095](https://user-images.githubusercontent.com/47908040/197671351-ad8b1cf1-9c58-4582-a6aa-be047470b1a8.JPG)
+
+## Animation Capability
+
+![headlight animation](https://user-images.githubusercontent.com/47908040/197675022-6a4fffce-e2d0-4149-b49e-6b1ef7047027.gif)
