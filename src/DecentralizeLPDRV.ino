@@ -5,6 +5,7 @@
  * Date: May 7, 2022
  */
 #include "neopixel.h"   //Neopixel Library for Addressable Strips
+#include "DecentralizedLV-Boards/DecentralizedLV-Boards.h"
 
 /////////////////////////////////////////////////////////
 // BOARD DEFINITION - UNCOMMENT BOARD TO BE PROGRAMMED //
@@ -349,6 +350,7 @@ void autoBoardCAN();
 void setup() {
     can.begin(500000);          //Start CAN communication at 500kbps
     can.addFilter(0x100,0x7FF); //Adds a filter to accept messages with CAN ID 0x100
+    testClass();
     boardConfig();              //Call function to configure the pins depending on which board this is
     #ifdef USING_NEOPIXEL       //If neopixel is being used on this board, initialize the strip
     strip.begin();
