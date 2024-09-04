@@ -3,7 +3,7 @@
 /******************************************************/
 
 #include "Particle.h"
-#line 1 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
+#line 1 "c:/Users/mligh/OneDrive/Documents/GitHub/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
 /*
  * Project DecentralizeLPDRV
  * Description: Code for the Decentralized Low-Voltge System Low-Power Driver Boards
@@ -16,9 +16,6 @@
 // BOARD DEFINITION - UNCOMMENT BOARD TO BE PROGRAMMED //
 /////////////////////////////////////////////////////////
 
-//#define BDFL      //Front-Left Board
-//#define BDFR      //Front-Right Board
-//#define BDRL      //Rear-Left Board
 void initialize(uint8_t pinNum);
 void configCANWatch(CANMessage *wtch, uint8_t cbyte, uint8_t cbitmsk);
 void autoCAN();
@@ -45,13 +42,16 @@ void loop();
 void animationHandler();
 void animationHandler2();
 void CANSend(uint16_t Can_addr, byte data0, byte data1, byte data2, byte data3, byte data4, byte data5, byte data6, byte data7);
-#line 16 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
-#define BDRR        //Rear-Right Board
+#line 13 "c:/Users/mligh/OneDrive/Documents/GitHub/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
+#define BDFL      //Front-Left Board
+//#define BDFR      //Front-Right Board
+//#define BDRL      //Rear-Left Board
+//#define BDRR        //Rear-Right Board
 
 SYSTEM_MODE(SEMI_AUTOMATIC);    //Disable Wi-Fi for this system
 
 /////////////////////////////////////////////////////////////////////////
-// Neopixel Board Params - Allows Per-Board Pixel Count and Pin Config //
+// Neopixel Board Params   Allows Per-Board Pixel Count and Pin Config //
 /////////////////////////////////////////////////////////////////////////
 
 #ifdef BDFL
@@ -89,6 +89,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);    //Disable Wi-Fi for this system
 #define SOL_FADE_WID        3       //Number of pixels in the animation where there is fade-out
 #define SOL_FADE_OFFSET     30      //Amount of dimming that occurs for each fade step from the center
 #define STRT_FADE_OFFSET    60
+#define TRN_DELAY           30      //Milliseconds between publishes of transmission gear
 
 #ifdef USING_NEOPIXEL
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);    //Create Neopixel Strip Object
@@ -120,6 +121,7 @@ bool flashOn = true;        //Flash flag if there is a BMS fault
 uint16_t faultBMS = 0;      //Flag set to 1 if the BMS was the source of the fault
 uint16_t faultSwitch = 0;   //Flag set to 1 if the kill-switch was the source of the fault
 uint16_t carCharge;         //Flag set to 1 if the car is in wall-charge mode
+uint16_t trnCount = 0;
 bool solarCharge;           //Flag set to 1 if the car is in solar-charge mode
 bool startupHDL;            //Flag set to 1 when car is first turned on to play animations
 
@@ -316,91 +318,104 @@ class IOPin{        //Input/Output Pin - mappable to 6 different functions (LEDs
     }
 };
 
-class WatchVar{
+class WatchVar{     //WatchVar is like a "software pin" where a variable can have its value changed by CAN as opposed to a hardware pin
     public:
-    uint8_t canByte;
-    uint8_t canBitMsk;
-    bool *outVar;
-    CANMessage *watchID;
+    uint8_t canByte;            //Byte of the CAN Message to monitor (0-7)
+    uint8_t canBitMsk;          //Bit number in the byte to control output on-off
+    CANMessage *watchID;        //Pointer to the CAN message to watch
+    bool *outVar;               //Pointer to the variable that is updated based on the CAN message
+    //Configure which bit and byte to monitor in the CAN message
     void configCANWatch(CANMessage *wtch, uint8_t cbyte, uint8_t cbitmsk, bool *watchVar = nullptr){
         outVar = watchVar;
         watchID = wtch;
         canByte = cbyte;
         canBitMsk = cbitmsk;
     }
+    //Function updates whatever variable outVar points to with the value contained in the CAN message
     void autoCAN(){
         *outVar = watchID->data[canByte] & (1 << canBitMsk);
     }
 };
 
+/////////////////////////////
+// Pin Object Declarations //
+/////////////////////////////
 
+//Standard board has 4 low-power outputs without PWM (LP Outputs 0-3)
 LPDRVPin LP0;
 LPDRVPin LP1;
 LPDRVPin LP2;
 LPDRVPin LP3;
 
+//Standard board has 4 low-power outputs with PWM (LP Outputs 4-7)
 LPDRVPinPWM LP4;
 LPDRVPinPWM LP5;
 LPDRVPinPWM LP6;
 LPDRVPinPWM LP7;
 
+//Standard board has 3 high-power outputs (Relays)
 HPDRVPin HP0;
 HPDRVPin HP1;
 HPDRVPin HP2;
 
+//Standard board has 4 Input/Output pins for neopixels/sensors/switches
 IOPin IP0;
 IOPin IP1;
 IOPin IP2;
 IOPin IP3;
 
+//Created some WatchVars - Useful for handling fault signals like the BMS and kill switch
 WatchVar WV0;
 WatchVar WV1;
 
-bool startupToggle = true;
-uint8_t animationMode;
-uint16_t animationTick;
+bool startupToggle = true;  //Flag for playing neat animations on startup
+uint8_t animationMode;      //Global for the current animation mode
+uint16_t animationTick;     //A counter that makes animation have very little overhead - change the state of the LED based on the counter value
 
-Timer pTimer(10, animationHandler);
-Timer pTimer2(250, animationHandler2);
+Timer pTimer(10, animationHandler);     //Create a timer that happens ever 10 milliseconds for updating the animations
+Timer pTimer2(250, animationHandler2);  //A timer for the LV board that handles flashing the BPS fault light
 
-void boardConfig();
+void boardConfig();     //Function prototype
 void autoBoardCAN();
 
+//Function runs once at power up to configure the device.
 void setup() {
-    can.begin(500000);
-    can.addFilter(0x100,0x7FF);
-    boardConfig();
-    #ifdef USING_NEOPIXEL
+    can.begin(500000);          //Start CAN communication at 500kbps
+    can.addFilter(0x100,0x7FF); //Adds a filter to accept messages with CAN ID 0x100
+    boardConfig();              //Call function to configure the pins depending on which board this is
+    #ifdef USING_NEOPIXEL       //If neopixel is being used on this board, initialize the strip
     strip.begin();
     #endif
-    animationMode = 0;
+    animationMode = 0;          //Reset animation mode to default, set the tick to 0
     animationTick = 0;
-    autoBoardCAN(); 
-    pTimer.start();
+    autoBoardCAN();             //Call autoBoardCAN, which just calls autoCAN() on each of pins
+    pTimer.start();             //start the timer for the animations
     
 }
 
-
+//Loop continuously executes as fast as possible
 void loop() {
-    if(can.receive(inputMessage)){
-        if(inputMessage.id == CAN_SNS) pinStatus = inputMessage;
-        autoBoardCAN();
-        delay(5);
+    //All of the fancy pin logic may be complicated but makes life in the loop real EZ
+    if(can.receive(inputMessage)){      //If a CAN Message was received from another board matching the filter (ID 0x100)
+        if(inputMessage.id == CAN_SNS) pinStatus = inputMessage;    //Copy the message into the main message listened to by all of the pins
+        autoBoardCAN();     //Call autoCAN on all the pins to update based on the new message, and you're done, the pins automatically update state
+        delay(5);           //Delay for a few milliseconds so we aren't blazing around the loop
     }
 }
 
+//AnimationHandler updates the states of LEDs and other things that play animations over time - using an interrupt allows loop() to continue to run and get updates
 void animationHandler(){
     #ifdef BDFL //Front-Left Driver Board Config
         if(animationMode == 0){    //Neopixel animated, turn signal not animated
-            if(IP0.pwmCANFlag()){
-                if(animationTick == PIXEL_COUNT) return;
-                strip.setPixelColor(animationTick++,AMBER);
-                strip.show();
+            if(IP0.pwmCANFlag()){   //Flag set true when there is a left turn signal active
+                if(animationTick == PIXEL_COUNT) return;    //If we've reached the length of the strip, we've lighted all of the pixels
+                strip.setPixelColor(animationTick++,AMBER); //Light pixel # animation tick AMBER, then increment the counter so the next pixel is lit the next time the interrupt runs
+                strip.show();   //Call show to update the LED strip
             }
-            else{
+            else{   //If the turn signal is turned off, turn off all of the pixels in the strip
                 strip.clear();
                 strip.show();
-                animationTick = 0;
+                animationTick = 0;  //Reset the counter so we start at the beginning of the strip again
             }
         }
         else if(animationMode == 1){
@@ -443,7 +458,7 @@ void animationHandler(){
         }
     #endif
     #ifdef BDFR //Front-Right Driver Board Config
-        if(animationMode == 0){    //Neopixel animated, turn signal not animated
+        if(animationMode == 0){    //Chase animation - fills strip starting at pixel 0
             if(IP0.pwmCANFlag()){
                 if(animationTick == PIXEL_COUNT) return;
                 strip.setPixelColor(animationTick++,AMBER);
@@ -455,7 +470,7 @@ void animationHandler(){
                 animationTick = 0;
             }
         }
-        else if(animationMode == 1){
+        else if(animationMode == 1){    //Fade-up entire strip animation
             if(IP0.pwmCANFlag()){
                 byte gCol = animationTick*0.85;
                 byte bCol = animationTick*0.75;
@@ -468,7 +483,7 @@ void animationHandler(){
             }
             
         }
-        else if(animationMode == 2){
+        else if(animationMode == 2){    //Startup animation - small group of pixels travelling across strip
             uint16_t tempTick  = (animationTick >> 2);
             if(tempTick < (PIXEL_COUNT) + SOL_FADE_WID + 1){
                 strip.setPixelColor(tempTick-SOL_FADE_WID-1,0,0,0);
@@ -499,8 +514,8 @@ void animationHandler(){
     #endif
     #ifdef BDRL
         if(!faultBMS && !faultSwitch){   //No fault
-            if(IP2.pwmCANFlag()){
-                if(flashOn){
+            if(IP2.pwmCANFlag()){   //If the brake pedal is pressed
+                if(flashOn){ //If the white section of the BPS fault is ON, turn back to RED since fault was cleared
                     for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
                         strip.setPixelColor((PIXEL_COUNT>>1)+i,255,0,0);
                         strip.setPixelColor((PIXEL_COUNT>>1)-1-i,255,0,0);
@@ -508,15 +523,15 @@ void animationHandler(){
                     strip.show();
                     flashOn = 0;
                 }
-                if(animationTick < (PIXEL_COUNT>>1)){
+                if(animationTick < (PIXEL_COUNT>>1)){   //Do animation where the pixels start from the center and fill going outwards
                     strip.setPixelColor((PIXEL_COUNT>>1)+1+animationTick,255,0,0);
                     strip.setPixelColor((PIXEL_COUNT>>1)-animationTick,255,0,0);
                     strip.show();
                     animationTick++;
                 }
             }
-            else{
-                if(flashOn){
+            else{   //Not braking
+                if(flashOn){    //If the white section of the BPS fault is ON, turn OFF since fault was cleared
                     for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
                         strip.setPixelColor((PIXEL_COUNT>>1)+i,0,0,0);
                         strip.setPixelColor((PIXEL_COUNT>>1)-1-i,0,0,0);
@@ -524,12 +539,12 @@ void animationHandler(){
                     strip.show();
                     flashOn = 0;
                 }
-                if((carCharge || solarCharge) && !ignition){
+                if((carCharge || solarCharge) && !ignition){    //Animation for car charging/solar charging mode
                     uint16_t tempTick  = (animationTick >> 2);
                     if(tempTick < (PIXEL_COUNT >> 1) + SOL_FADE_WID + 1){
                         strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-SOL_FADE_WID-1,0,0,0);
                         strip.setPixelColor((PIXEL_COUNT>>1)-tempTick+SOL_FADE_WID,0,0,0);
-                        if(carCharge && !solarCharge){
+                        if(carCharge && !solarCharge){      //Charging from both solar and wall
                             for(int i = 0; i < SOL_PUL_WIDTH; i++){
                                 strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-1+i,100,0,100);
                                 strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-i,100,0,100);
@@ -541,7 +556,7 @@ void animationHandler(){
                                 strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-1+i,100-SOL_FADE_OFFSET*(i+1),0,100-SOL_FADE_OFFSET*(i+1));
                             }
                         }
-                        else if(solarCharge && !carCharge){
+                        else if(solarCharge && !carCharge){     //Solar charging but not car charging
                             for(int i = 0; i < SOL_PUL_WIDTH; i++){
                                 strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-1+i,0,100,0);
                                 strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-i,0,100,0);
@@ -553,7 +568,7 @@ void animationHandler(){
                                 strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-1+i,0,100-SOL_FADE_OFFSET*(i+1),0);
                             }
                         }
-                        else{
+                        else{   //Wall charging but not solar charging
                             for(int i = 0; i < SOL_PUL_WIDTH; i++){
                                 strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-1+i,100,0,100);
                                 strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-i,100,0,100);
@@ -582,20 +597,20 @@ void animationHandler(){
                 }
             }
         }
-        else{
-            if(IP2.pwmCANFlag()){
-                for(int i = FLASH_PIXEL_WIDTH>>1; i < PIXEL_COUNT; i++){
+        else{   //Animation if there is a fault happening
+            if(IP2.pwmCANFlag()){   //Is the brake pressed at the same time? 
+                for(int i = FLASH_PIXEL_WIDTH>>1; i < PIXEL_COUNT; i++){    //Light up pixels surrounding BPS flash area as RED
                     strip.setPixelColor((PIXEL_COUNT>>1)+i,255,0,0);
                     strip.setPixelColor((PIXEL_COUNT>>1)-1-i,255,0,0);
                 }
             }
-            else{
+            else{   //Otherwise turn off LEDs surrounding the BPS flasher
                 for(int i = FLASH_PIXEL_WIDTH>>1; i < PIXEL_COUNT; i++){
                     strip.setPixelColor((PIXEL_COUNT>>1)+i,0,0,0);
                     strip.setPixelColor((PIXEL_COUNT>>1)-1-i,0,0,0);
                 }
             }
-            if(flashOn){
+            if(flashOn){    //If the flasher variable is true, light up the section white. Variable toggled every 0.25 seconds by interrupt
                 for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
                     strip.setPixelColor((PIXEL_COUNT>>1)+i,255,200,170);
                     strip.setPixelColor((PIXEL_COUNT>>1)-1-i,255,200,170);
@@ -618,7 +633,7 @@ void animationHandler(){
 }
 
 void animationHandler2(){
-    flashOn = !flashOn;
+    flashOn = !flashOn; //Simply toggle the variable every time the interupt happens to make the section flash
 
 }
 
@@ -649,17 +664,18 @@ void boardConfig(){
         
         IP3.initialize(A3,1);                   //Unused
         IP2.initialize(A2,1);                   //Unused
-        IP1.initialize(A1,5);                   //Neopixel output
-        IP0.initialize(RX,5);                   //Unused
+        IP1.initialize(A1,1);                   //Unused
+        IP0.initialize(RX,5);                   //Neopixel output
 
-        IP0.configCANWatch(&pinStatus,1,0);   //Setup watch for neopixel animation
+        IP0.configCANWatch(&pinStatus,1,0);     //Setup watch for neopixel animation
 
-        HP2.configCANWatch(&pinStatus,7,2);     //Byte 7, Bit 2 - iBooster Power
+        HP2.configCANWatch(&pinStatus,7,2);     //Byte 7, Bit 2 - Unused
         HP1.configCANWatch(&pinStatus,7,1);     //Byte 7, Bit 1 - RMS Pump
         HP0.configCANWatch(&pinStatus,7,0);     //Byte 7, Bit 0 - Radiator Fan
 
-        WV0.configCANWatch(&pinStatus,5,3,&startupHDL);
+        WV0.configCANWatch(&pinStatus,5,3,&startupHDL); //Populate the variable startupHDL transmitted from the sensor board
 
+        
     #endif
     #ifdef BDFR //Front-Right Driver Board Config
         replyAddr.id = 0x102;   //Reply on 0x102
@@ -689,13 +705,13 @@ void boardConfig(){
         LP4.duty(255);
 
         //LP6.configCANWatch(&pinStatus,3,255);     //Reverse
-        LP6.configCANWatch(&pinStatus,3,255);   //Fan PWM
-        LP7.configCANWatch(&pinStatus,1,255);
-        LP4.configCANWatch(&pinStatus,2,255);
-        LP1.configCANWatch(&pinStatus,4,5);
+        LP6.configCANWatch(&pinStatus,3,255);       //Fan PWM
+        LP7.configCANWatch(&pinStatus,1,255);       //Left turn signal PWM
+        LP4.configCANWatch(&pinStatus,2,255);       //Brake PWM
+        LP1.configCANWatch(&pinStatus,4,5);         //Backup camera output
         //LP0.configCANWatch(&pinStatus,7,3);
 
-        HP0.configCANWatch(&pinStatus,7,4);
+        HP0.configCANWatch(&pinStatus,7,4);     //Relay for MPPT
 
         IP3.initialize(A3,6);   //BMS Fault Sense input
         IP2.initialize(A2,5);   //Neopixel output
@@ -709,8 +725,8 @@ void boardConfig(){
         IP1.configCANWatch(&replyAddr,1,0,&faultSwitch, true); //Kill-switch fault reply - used for BPS Flash
         IP0.configCANWatch(&replyAddr,2,0,&carCharge); //Solar Charge Enable reply
 
-        WV0.configCANWatch(&pinStatus,4,3,&solarCharge);
-        WV1.configCANWatch(&pinStatus,5,0,&ignition);
+        WV0.configCANWatch(&pinStatus,4,3,&solarCharge);    //Flag set by the sensor board if the solar charge switch is on - used for animations
+        WV1.configCANWatch(&pinStatus,5,0,&ignition);       //Flag set by the sensor board if the ignition switch is on - used for animations
 
     #endif
     #ifdef BDRR
@@ -738,6 +754,7 @@ void boardConfig(){
     pinMode(A0, INPUT_PULLUP);  //General-purpose button
 }
 
+//Function to call autoCAN() on all of the ACTIVE pins for a particular board - don't call autoCAN on an unitialized pin as you'll crash the code
 void autoBoardCAN(){
     #ifdef BDFL //Front-Left Driver Board Config
         LP5.autoCAN();   //Byte 1, 8 bits - Left turn signal PWM
@@ -750,6 +767,14 @@ void autoBoardCAN(){
         HP0.autoCAN();   //Byte 7, Bit 0 - Radiator Fan
 
         WV0.autoCAN();
+
+        if(millis() - trnCount > TRN_DELAY){
+            uint16_t sns1 = (analogRead(A3) >> 4);
+            uint16_t sns2 = (analogRead(A2) >> 4);
+
+            CANSend(0x101,(uint8_t)sns1,(uint8_t)sns2,0,0,0,0,0,0);
+            trnCount = millis();
+        }
 
         if(startupHDL && startupToggle && animationMode != 2){
             animationMode = 2;
@@ -795,14 +820,15 @@ void autoBoardCAN(){
         WV0.autoCAN();
         WV1.autoCAN();
 
-        if(faultBMS || faultSwitch){
-            if(!pTimer2.isActive()){
-                pTimer2.start();
-                flashOn = 1;
+        //Kind of a lazy spot to put this
+        if(faultBMS || faultSwitch){    //Check if one of the fault sources has been triggered (switch or BMS)
+            if(!pTimer2.isActive()){    //Start the timer if it isn't active
+                pTimer2.start();        //Start the timer for the white flash signal
+                flashOn = 1;            //Instantly turn on the BPS LED - interrupt toggles this
             }
         }
         else{
-            if(pTimer2.isActive()){
+            if(pTimer2.isActive()){     //Stop the timer if there is no fault and it is running
                 pTimer2.stop();
                 flashOn = 1;
             }
@@ -818,9 +844,10 @@ void autoBoardCAN(){
     #endif
 }
 
+//Function takes in data from its arguments and sends out a CAN message to the system
 void CANSend(uint16_t Can_addr, byte data0, byte data1, byte data2, byte data3, byte data4, byte data5, byte data6, byte data7){
-    replyAddr.len = 8;
-    replyAddr.data[0] = data0;
+    replyAddr.len = 8;      //Send 8 bytes of data
+    replyAddr.data[0] = data0;  //Copy in each of the bytes
     replyAddr.data[1] = data1;
     replyAddr.data[2] = data2;
     replyAddr.data[3] = data3;
@@ -829,5 +856,5 @@ void CANSend(uint16_t Can_addr, byte data0, byte data1, byte data2, byte data3, 
     replyAddr.data[6] = data6;
     replyAddr.data[7] = data7;
     
-    can.transmit(replyAddr);
+    can.transmit(replyAddr);    //Transmit out the CAN data
 }

@@ -10,15 +10,15 @@
 // BOARD DEFINITION - UNCOMMENT BOARD TO BE PROGRAMMED //
 /////////////////////////////////////////////////////////
 
-//#define BDFL      //Front-Left Board
+#define BDFL      //Front-Left Board
 //#define BDFR      //Front-Right Board
 //#define BDRL      //Rear-Left Board
-#define BDRR        //Rear-Right Board
+//#define BDRR        //Rear-Right Board
 
 SYSTEM_MODE(SEMI_AUTOMATIC);    //Disable Wi-Fi for this system
 
 /////////////////////////////////////////////////////////////////////////
-// Neopixel Board Params - Allows Per-Board Pixel Count and Pin Config //
+// Neopixel Board Params   Allows Per-Board Pixel Count and Pin Config //
 /////////////////////////////////////////////////////////////////////////
 
 #ifdef BDFL
@@ -56,6 +56,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);    //Disable Wi-Fi for this system
 #define SOL_FADE_WID        3       //Number of pixels in the animation where there is fade-out
 #define SOL_FADE_OFFSET     30      //Amount of dimming that occurs for each fade step from the center
 #define STRT_FADE_OFFSET    60
+#define TRN_DELAY           30      //Milliseconds between publishes of transmission gear
 
 #ifdef USING_NEOPIXEL
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);    //Create Neopixel Strip Object
@@ -87,6 +88,7 @@ bool flashOn = true;        //Flash flag if there is a BMS fault
 uint16_t faultBMS = 0;      //Flag set to 1 if the BMS was the source of the fault
 uint16_t faultSwitch = 0;   //Flag set to 1 if the kill-switch was the source of the fault
 uint16_t carCharge;         //Flag set to 1 if the car is in wall-charge mode
+uint16_t trnCount = 0;
 bool solarCharge;           //Flag set to 1 if the car is in solar-charge mode
 bool startupHDL;            //Flag set to 1 when car is first turned on to play animations
 
@@ -629,8 +631,8 @@ void boardConfig(){
         
         IP3.initialize(A3,1);                   //Unused
         IP2.initialize(A2,1);                   //Unused
-        IP1.initialize(A1,5);                   //Neopixel output
-        IP0.initialize(RX,5);                   //Unused
+        IP1.initialize(A1,1);                   //Unused
+        IP0.initialize(RX,5);                   //Neopixel output
 
         IP0.configCANWatch(&pinStatus,1,0);     //Setup watch for neopixel animation
 
@@ -640,6 +642,7 @@ void boardConfig(){
 
         WV0.configCANWatch(&pinStatus,5,3,&startupHDL); //Populate the variable startupHDL transmitted from the sensor board
 
+        
     #endif
     #ifdef BDFR //Front-Right Driver Board Config
         replyAddr.id = 0x102;   //Reply on 0x102
@@ -731,6 +734,14 @@ void autoBoardCAN(){
         HP0.autoCAN();   //Byte 7, Bit 0 - Radiator Fan
 
         WV0.autoCAN();
+
+        if(millis() - trnCount > TRN_DELAY){
+            uint16_t sns1 = (analogRead(A3) >> 4);
+            uint16_t sns2 = (analogRead(A2) >> 4);
+
+            CANSend(0x101,(uint8_t)sns1,(uint8_t)sns2,0,0,0,0,0,0);
+            trnCount = millis();
+        }
 
         if(startupHDL && startupToggle && animationMode != 2){
             animationMode = 2;
