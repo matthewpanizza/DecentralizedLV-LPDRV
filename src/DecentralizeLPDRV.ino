@@ -112,6 +112,7 @@ Timer pTimer2(250, animationHandler2);  //A timer for the LV board that handles 
 uint32_t loop_time = 0;
 
 void boardConfig();     //Function prototype
+void transmitLPDRVBoards();
 void updateOutputPins();
 void updateInputPins();
 void updateAnimations();
@@ -150,7 +151,24 @@ void loop() {
     while(millis()-loop_time < 10) delayMicroseconds(1);    //Fancy delay mechanism which takes into account time to read CAN bus frames
     loop_time = millis();
 
-    rearLeftDriver.sendCANData(canController);
+    transmitLPDRVBoards();      //Transmits data from this board to the CAN Bus.
+}
+
+/// @brief Call the sendCANData for the respective LPDRV board you've programmed.
+void transmitLPDRVBoards(){
+    #ifdef BDFL //Front-Left Driver Board
+        //Haven't made a Front Left Driver class in Boards API yet. Will need to make one if you want to transmit data from this board.
+    #endif
+    #ifdef BDFR //Front-Right Driver Board
+        //Haven't made a Front Right Driver class in Boards API yet. Will need to make one if you want to transmit data from this board.
+    #endif
+    #ifdef BDRL
+        rearLeftDriver.sendCANData(canController);
+    #endif
+    #ifdef BDRR
+        //Haven't made a Rear Right Driver class in Boards API yet. Will need to make one if you want to transmit data from this board.
+    #endif
+    
 }
 
 //AnimationHandler updates the states of LEDs and other things that play animations over time - using an interrupt allows loop() to continue to run and get updates
