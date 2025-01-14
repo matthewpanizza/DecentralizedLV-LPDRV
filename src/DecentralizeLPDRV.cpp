@@ -3,7 +3,7 @@
 /******************************************************/
 
 #include "Particle.h"
-#line 1 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
+#line 1 "c:/Users/mligh/Downloads/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
 /*
  * Project DecentralizeLPDRV
  * Description: Code for the Decentralized Low-Voltge System Low-Power Driver Boards
@@ -21,7 +21,7 @@ void setup();
 void loop();
 void animationHandler();
 void animationHandler2();
-#line 14 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
+#line 14 "c:/Users/mligh/Downloads/DecentralizedLV-LPDRV/src/DecentralizeLPDRV.ino"
 #define BDFL      //Front-Left Board
 //#define BDFR      //Front-Right Board
 //#define BDRL      //Rear-Left Board
@@ -123,7 +123,8 @@ Timer pTimer2(250, animationHandler2);  //A timer for the LV board that handles 
 uint32_t loop_time = 0;
 
 void boardConfig();     //Function prototype
-void updatePins();
+void updateOutputPins();
+void updateInputPins();
 void updateAnimations();
 
 SYSTEM_MODE(SEMI_AUTOMATIC);    //Disable Wi-Fi for this system
@@ -131,8 +132,8 @@ SYSTEM_MODE(SEMI_AUTOMATIC);    //Disable Wi-Fi for this system
 //Function runs once at power up to configure the device.
 void setup() {
     canController.begin(500000);
-    canController.addFilter(powerController.boardAddress, 0x7FF);   //Allow incoming messages from Power Controller
-    canController.addFilter(dashController.boardAddress, 0x7FF);    //Allow incoming messages from Dash Controller
+    canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
+    canController.addFilter(dashController.boardAddress);    //Allow incoming messages from Dash Controller
     boardConfig();              //Call function to configure the pins depending on which board this is
     rearLeftDriver.initialize();    //Reset the underlying object flags
     #ifdef USING_NEOPIXEL       //If neopixel is being used on this board, initialize the strip
@@ -140,7 +141,8 @@ void setup() {
     #endif
     animationMode = 0;          //Reset animation mode to default, set the tick to 0
     animationTick = 0;
-    updatePins();               //Update the pin state based on the data received from other boards
+    updateOutputPins();         //Update the pin state based on the data received from other boards
+    updateInputPins();          //Update this board's variables that are set by reading the input pins
     pTimer.start();             //start the timer for the animations
     
 }
@@ -152,7 +154,8 @@ void loop() {
         dashController.receiveCANData(inputMessage);
         powerController.receiveCANData(inputMessage);
     }
-    updatePins();       //Update the pin state based on the data received from other boards
+    updateOutputPins();         //Update the pin state based on the data received from other boards
+    updateInputPins();          //Read the multipurpose pins that need to be transmitted from this board
     updateAnimations();
 
     while(millis()-loop_time < 10) delayMicroseconds(1);    //Fancy delay mechanism which takes into account time to read CAN bus frames
@@ -444,7 +447,7 @@ void boardConfig(){
 }
 
 //Update the state of the pins in this function. Do reads/writes to and from the DecentralizedLV API objects.
-void updatePins(){
+void updateOutputPins(){
     #ifdef BDFL //Front-Left Driver Board Config
         
         analogWrite(LP5, dashController.leftTurnPWM);   //Left turn signal PWM. analogWrite creates PWM pulse based on duty cycle (0-255)
@@ -491,6 +494,33 @@ void updatePins(){
         else analogWrite(LP4, 0);                               //If brake pedal is not pressed and the headlights are not on, thne the brake lights should be fully off.
 
         digitalWrite(LP1, dashController.reversePress);         //If we're in reverse, then turn on the backup lights
+
+    #endif
+}
+
+/// @brief Read any data this board collects (i.e. switches from the 4X low power inputs) and populate the Boards API variables
+void updateInputPins(){
+    #ifdef BDFL //Front-Left Driver Board Config
+        
+        //TO-DO: Read in IP0, IP1, IP2, IP3 here for the functions of the front-right board!
+        
+    #endif
+    #ifdef BDFR //Front-Right Driver Board Config
+       
+       //TO-DO: Read in IP0, IP1, IP2, IP3 here for the functions of the front-right board!
+
+    #endif
+    #ifdef BDRL
+
+        //TO-DO: Read in IP0, IP1, IP2, IP3 here for the functions of the front-right board!
+        //An example below of how it was done on SPX
+        //rearLeftDriver.bmsFaultInput = digitalRead(IP1);
+        //rearLeftDriver.switchFaultInput = digitalRead(IP0);
+    
+    #endif
+    #ifdef BDRR
+
+        //TO-DO: Read in IP0, IP1, IP2, IP3 here for the functions of the front-right board!
 
     #endif
 }
