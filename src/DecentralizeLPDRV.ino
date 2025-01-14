@@ -11,10 +11,10 @@
 // BOARD DEFINITION - UNCOMMENT BOARD TO BE PROGRAMMED //
 /////////////////////////////////////////////////////////
 
-#define BDFL      //Front-Left Board
+//#define BDFL      //Front-Left Board
 //#define BDFR      //Front-Right Board
 //#define BDRL      //Rear-Left Board
-//#define BDRR        //Rear-Right Board
+#define BDRR        //Rear-Right Board
 
 /////////////////////////////////////////////////////////
 /////////////      PIN MAPPINGS      ////////////////////
@@ -38,52 +38,6 @@
 #define IP1     A2      //Multipurpose IO Pin 1 
 #define IP0     A3      //Multipurpose IO Pin 0
 
-
-/////////////////////////////////////////////////////////////////////////
-// Neopixel Board Params   Allows Per-Board Pixel Count and Pin Config //
-/////////////////////////////////////////////////////////////////////////
-
-#ifdef BDFL
-    #define PIXEL_COUNT 36
-    #define PIXEL_PIN RX
-#endif
-#ifdef BDFR
-    #define PIXEL_COUNT 36
-    #define PIXEL_PIN RX
-#endif
-#ifdef BDRL
-    #define PIXEL_COUNT 46
-    #define PIXEL_PIN A2
-#endif
-#ifdef BDRR
-    #define PIXEL_COUNT 1
-    #define PIXEL_PIN A1
-#endif
-
-//////////////////////////////////////////////////////////////////////////////
-// Neopixel Setup Params - Allows Control of LED Type, and if LEDs are used //
-//////////////////////////////////////////////////////////////////////////////
-
-#define USING_NEOPIXEL      //Uncomment if Neopixels are being used
-#define PIXEL_TYPE WS2812B
-
-//RGB color definitions for various LED colors
-#define AMBER 255,60,0      // R = 255, G = 60, B = 0
-#define WHITE 255,200,180
-#define DARK 0,0,0
-
-#define FLASH_PIXEL_WIDTH   14      //Number of pixels wide the BPS flash indicator should be
-#define SOL_PUL_CYCLES      500     //Delay between solar animation pulses
-#define SOL_PUL_WIDTH       1       //Number of pixels in the animation at full-brightness
-#define SOL_FADE_WID        3       //Number of pixels in the animation where there is fade-out
-#define SOL_FADE_OFFSET     30      //Amount of dimming that occurs for each fade step from the center
-#define STRT_FADE_OFFSET    60
-#define TRN_DELAY           30      //Milliseconds between publishes of transmission gear
-
-#ifdef USING_NEOPIXEL
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);    //Create Neopixel Strip Object
-#endif
-
 ////////////////////////////
 // CAN Message Formatting //
 ////////////////////////////
@@ -97,13 +51,6 @@ DashController_CAN dashController(DASH_CONTROL_ADDR);
 PowerController_CAN powerController(POWER_CONTROL_ADDR);
 
 LV_CANMessage inputMessage;    //Input message for receiving from multiple addresses and filtering
-
-bool flashOn = true;        //Flash flag if there is a BMS fault
-bool startupHDL;            //Flag set to 1 when car is first turned on to play animations
-
-bool startupToggle = true;  //Flag for playing neat animations on startup
-uint8_t animationMode;      //Global for the current animation mode
-uint16_t animationTick;     //A counter that makes animation have very little overhead - change the state of the LED based on the counter value
 
 Timer pTimer(10, animationHandler);     //Create a timer that happens ever 10 milliseconds for updating the animations
 Timer pTimer2(250, animationHandler2);  //A timer for the LV board that handles flashing the BPS fault light
@@ -125,12 +72,6 @@ void setup() {
     canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
     canController.addFilter(dashController.boardAddress);    //Allow incoming messages from Dash Controller
     boardConfig();              //Call function to configure the pins depending on which board this is
-    rearLeftDriver.initialize();    //Reset the underlying object flags
-    #ifdef USING_NEOPIXEL       //If neopixel is being used on this board, initialize the strip
-    strip.begin();
-    #endif
-    animationMode = 0;          //Reset animation mode to default, set the tick to 0
-    animationTick = 0;
     updateOutputPins();         //Update the pin state based on the data received from other boards
     updateInputPins();          //Update this board's variables that are set by reading the input pins
     pTimer.start();             //start the timer for the animations
@@ -174,223 +115,13 @@ void transmitLPDRVBoards(){
 //AnimationHandler updates the states of LEDs and other things that play animations over time - using an interrupt allows loop() to continue to run and get updates
 void animationHandler(){
     #ifdef BDFL //Front-Left Driver Board Config
-        if(animationMode == 0){    //Neopixel animated, turn signal not animated
-            if(dashController.leftTurnPWM){   //Flag set true when there is a left turn signal active
-                if(animationTick == PIXEL_COUNT) return;    //If we've reached the length of the strip, we've lighted all of the pixels
-                strip.setPixelColor(animationTick++,AMBER); //Light pixel # animation tick AMBER, then increment the counter so the next pixel is lit the next time the interrupt runs
-                strip.show();   //Call show to update the LED strip
-            }
-            else{   //If the turn signal is turned off, turn off all of the pixels in the strip
-                strip.clear();
-                strip.show();
-                animationTick = 0;  //Reset the counter so we start at the beginning of the strip again
-            }
-        }
-        else if(animationMode == 1){
-            if(dashController.leftTurnPWM){
-                byte gCol = animationTick*0.85;
-                byte bCol = animationTick*0.75;
-                for(int i = 0; i < PIXEL_COUNT; i++) strip.setPixelColor(i, animationTick,gCol, bCol);
-                strip.show();
-                if(animationTick < 255) animationTick++;
-            }
-            else{
-                animationTick = 0;
-            }
-        }
-        else if(animationMode == 2){
-            uint16_t tempTick  = (animationTick >> 2);
-            if(tempTick < (PIXEL_COUNT) + SOL_FADE_WID + 1){
-                strip.setPixelColor(tempTick-SOL_FADE_WID-1,0,0,0);
-                for(int i = 0; i < SOL_PUL_WIDTH; i++){
-                    strip.setPixelColor(tempTick-1+i,255,255,255);
-                }
-                for(int i = 0; i < SOL_FADE_WID; i++){
-                    strip.setPixelColor(tempTick+SOL_PUL_WIDTH-1+i,255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1));
-                    strip.setPixelColor(tempTick-i,255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1));
-                }
-                strip.show();
-                animationTick++;
-            }
-            else if(tempTick < (PIXEL_COUNT << 1) + SOL_FADE_WID + 1){
-                uint8_t pixNum = PIXEL_COUNT-1-(tempTick-(PIXEL_COUNT));
-                strip.setPixelColor(pixNum,255,255,255);
-                strip.show();
-                animationTick++;
-            }
-            else{
-                startupToggle = false;
-                animationMode = 0;
-                animationTick = 0;
-            }
-        }
+
     #endif
     #ifdef BDFR //Front-Right Driver Board Config
-        if(animationMode == 0){    //Chase animation - fills strip starting at pixel 0
-            if(dashController.rightTurnPWM){    //If the right turn signal is on
-                if(animationTick == PIXEL_COUNT) return;
-                strip.setPixelColor(animationTick++,AMBER);
-                strip.show();
-            }
-            else{
-                strip.clear();
-                strip.show();
-                animationTick = 0;
-            }
-        }
-        else if(animationMode == 1){    //Fade-up entire strip animation
-            if(dashController.rightTurnPWM){
-                byte gCol = animationTick*0.85;
-                byte bCol = animationTick*0.75;
-                for(int i = 0; i < PIXEL_COUNT; i++) strip.setPixelColor(i, animationTick,gCol, bCol);
-                strip.show();
-                if(animationTick < 255) animationTick++;
-            }
-            else{
-                animationTick = 0;
-            }
-            
-        }
-        else if(animationMode == 2){    //Startup animation - small group of pixels travelling across strip
-            uint16_t tempTick  = (animationTick >> 2);
-            if(tempTick < (PIXEL_COUNT) + SOL_FADE_WID + 1){
-                strip.setPixelColor(tempTick-SOL_FADE_WID-1,0,0,0);
-                for(int i = 0; i < SOL_PUL_WIDTH; i++){
-                    strip.setPixelColor(tempTick-1+i,255,255,255);
-                }
-                for(int i = 0; i < SOL_FADE_WID; i++){
-                    strip.setPixelColor(tempTick+SOL_PUL_WIDTH-1+i,255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1));
-                    strip.setPixelColor(tempTick-i,255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1),255-STRT_FADE_OFFSET*(i+1));
-                }
-                strip.show();
-                animationTick++;
-            }
-            else if(tempTick < (PIXEL_COUNT << 1) + SOL_FADE_WID + 1){
-                uint8_t pixNum = PIXEL_COUNT-1-(tempTick-(PIXEL_COUNT));
-                strip.setPixelColor(pixNum,255,255,255);
-                strip.show();
-                animationTick++;
-            }
-            else{
-                startupToggle = false;
-                animationMode = 0;
-                animationTick = 0;
-            }
-        }
+
     #endif
     #ifdef BDRL
-        if(!rearLeftDriver.bmsFaultInput && !rearLeftDriver.switchFaultInput){   //No fault
-            if(powerController.BrakeSense){   //If the brake pedal is pressed
-                if(flashOn){ //If the white section of the BPS fault is ON, turn back to RED since fault was cleared
-                    for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
-                        strip.setPixelColor((PIXEL_COUNT>>1)+i,255,0,0);
-                        strip.setPixelColor((PIXEL_COUNT>>1)-1-i,255,0,0);
-                    }
-                    strip.show();
-                    flashOn = 0;
-                }
-                if(animationTick < (PIXEL_COUNT>>1)){   //Do animation where the pixels start from the center and fill going outwards
-                    strip.setPixelColor((PIXEL_COUNT>>1)+1+animationTick,255,0,0);
-                    strip.setPixelColor((PIXEL_COUNT>>1)-animationTick,255,0,0);
-                    strip.show();
-                    animationTick++;
-                }
-            }
-            else{   //Not braking
-                if(flashOn){    //If the white section of the BPS fault is ON, turn OFF since fault was cleared
-                    for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
-                        strip.setPixelColor((PIXEL_COUNT>>1)+i,0,0,0);
-                        strip.setPixelColor((PIXEL_COUNT>>1)-1-i,0,0,0);
-                    }
-                    strip.show();
-                    flashOn = 0;
-                }
-                if((powerController.ACCharge || powerController.SolarCharge) && !powerController.Ign){    //Animation for car charging/solar charging mode
-                    uint16_t tempTick  = (animationTick >> 2);
-                    if(tempTick < (PIXEL_COUNT >> 1) + SOL_FADE_WID + 1){
-                        strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-SOL_FADE_WID-1,0,0,0);
-                        strip.setPixelColor((PIXEL_COUNT>>1)-tempTick+SOL_FADE_WID,0,0,0);
-                        if(powerController.ACCharge && !powerController.SolarCharge){      //Charging from both solar and wall
-                            for(int i = 0; i < SOL_PUL_WIDTH; i++){
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-1+i,100,0,100);
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-i,100,0,100);
-                            }
-                            for(int i = 0; i < SOL_FADE_WID; i++){
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick+SOL_PUL_WIDTH-1+i,100-SOL_FADE_OFFSET*(i+1),0,100-SOL_FADE_OFFSET*(i+1));
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-i,100-SOL_FADE_OFFSET*(i+1),0,100-SOL_FADE_OFFSET*(i+1));
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-SOL_PUL_WIDTH-i,100-SOL_FADE_OFFSET*(i+1),0,100-SOL_FADE_OFFSET*(i+1));
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-1+i,100-SOL_FADE_OFFSET*(i+1),0,100-SOL_FADE_OFFSET*(i+1));
-                            }
-                        }
-                        else if(powerController.SolarCharge && !powerController.ACCharge){     //Solar charging but not car charging
-                            for(int i = 0; i < SOL_PUL_WIDTH; i++){
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-1+i,0,100,0);
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-i,0,100,0);
-                            }
-                            for(int i = 0; i < SOL_FADE_WID; i++){
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick+SOL_PUL_WIDTH-1+i,0,100-SOL_FADE_OFFSET*(i+1),0);
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-i,0,100-SOL_FADE_OFFSET*(i+1),0);
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-SOL_PUL_WIDTH-i,0,100-SOL_FADE_OFFSET*(i+1),0);
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-1+i,0,100-SOL_FADE_OFFSET*(i+1),0);
-                            }
-                        }
-                        else{   //Wall charging but not solar charging
-                            for(int i = 0; i < SOL_PUL_WIDTH; i++){
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-1+i,100,0,100);
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-i,100,0,100);
-                            }
-                            for(int i = 0; i < SOL_FADE_WID; i++){
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick+SOL_PUL_WIDTH-1+i,100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1));
-                                strip.setPixelColor((PIXEL_COUNT>>1)+tempTick-i,100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1));
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-SOL_PUL_WIDTH-i,100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1));
-                                strip.setPixelColor((PIXEL_COUNT>>1)-tempTick-1+i,100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1),100-SOL_FADE_OFFSET*(i+1));
-                            }
-                        }
-                        strip.show();
-                        animationTick++;
-                    }
-                    else{
-                        if(animationTick < SOL_PUL_CYCLES) animationTick++;
-                        else animationTick = 0;
-                    }
-                    return;
-                }
-                if(animationTick >= 0){
-                    strip.setPixelColor((PIXEL_COUNT>>1)+1+animationTick,0,0,0);
-                    strip.setPixelColor((PIXEL_COUNT>>1)-animationTick,0,0,0);
-                    strip.show();
-                    if(animationTick)animationTick--;
-                }
-            }
-        }
-        else{   //Animation if there is a fault happening
-            if(powerController.BrakeSense){   //Is the brake pressed at the same time? 
-                for(int i = FLASH_PIXEL_WIDTH>>1; i < PIXEL_COUNT; i++){    //Light up pixels surrounding BPS flash area as RED
-                    strip.setPixelColor((PIXEL_COUNT>>1)+i,255,0,0);
-                    strip.setPixelColor((PIXEL_COUNT>>1)-1-i,255,0,0);
-                }
-            }
-            else{   //Otherwise turn off LEDs surrounding the BPS flasher
-                for(int i = FLASH_PIXEL_WIDTH>>1; i < PIXEL_COUNT; i++){
-                    strip.setPixelColor((PIXEL_COUNT>>1)+i,0,0,0);
-                    strip.setPixelColor((PIXEL_COUNT>>1)-1-i,0,0,0);
-                }
-            }
-            if(flashOn){    //If the flasher variable is true, light up the section white. Variable toggled every 0.25 seconds by interrupt
-                for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
-                    strip.setPixelColor((PIXEL_COUNT>>1)+i,255,200,170);
-                    strip.setPixelColor((PIXEL_COUNT>>1)-1-i,255,200,170);
-                }
-            }
-            else{
-                for(int i = 0; i < FLASH_PIXEL_WIDTH>>1; i++){
-                    strip.setPixelColor((PIXEL_COUNT>>1)+i,0,0,0);
-                    strip.setPixelColor((PIXEL_COUNT>>1)-1-i,0,0,0);
-                }
-            }
-            strip.show();
-            
-        }
+
     #endif
     #ifdef BDRR
         
@@ -398,7 +129,7 @@ void animationHandler(){
 }
 
 void animationHandler2(){
-    flashOn = !flashOn; //Simply toggle the variable every time the interupt happens to make the section flash
+    //flashOn = !flashOn; //Simply toggle the variable every time the interupt happens to make the section flash
 
 }
 
@@ -535,46 +266,11 @@ void updateInputPins(){
 void updateAnimations(){
     #ifdef BDFL
 
-        if(startupHDL && startupToggle && animationMode != 2){
-            animationMode = 2;
-            startupToggle = false;
-        }
-        if(!startupToggle && !startupHDL){
-            startupToggle = true;
-        }
-
     #endif
     #ifdef BDFR
 
-        if(startupHDL && startupToggle && animationMode != 2){
-            animationMode = 2;
-            startupToggle = false;
-        }
-        if(!startupToggle && !startupHDL){
-            startupToggle = true;
-        }
-
     #endif
     #ifdef BDRL
-
-        if(digitalRead(A1)){
-            RGB.control(true);
-            RGB.color(0,255,0);
-        }
-
-        //Kind of a lazy spot to put this
-        if(rearLeftDriver.bmsFaultInput || rearLeftDriver.switchFaultInput){    //Check if one of the fault sources has been triggered (switch or BMS)
-            if(!pTimer2.isActive()){    //Start the timer if it isn't active
-                pTimer2.start();        //Start the timer for the white flash signal
-                flashOn = 1;            //Instantly turn on the BPS LED - interrupt toggles this
-            }
-        }
-        else{
-            if(pTimer2.isActive()){     //Stop the timer if there is no fault and it is running
-                pTimer2.stop();
-                flashOn = 1;
-            }
-        }
 
     #endif
     #ifdef BDRR
